@@ -1,0 +1,39 @@
+# gpu-lab.sub
+# CHTC GPU Lab job for Medical Diagnosis Experiment
+# Number of jobs is calculated and queued by run.sh
+
+universe = vanilla
+
+log    = log/job_$(Cluster)_$(Process).log
+output = log/job_$(Cluster)_$(Process).out
+error  = log/job_$(Cluster)_$(Process).err
+
+executable = run_gpu_job.sh
+arguments = $(Cluster) $(Process)
+
+should_transfer_files = YES
+when_to_transfer_output = ON_EXIT
+
+# Transfer input files
+transfer_input_files = main.py, utils.py, mimic_data.csv, config.yaml
+
+# Transfer output directory (contains result_N.json files)
+transfer_output_files = results
+
+# GPU Lab settings
++WantGPULab = true
++GPUJobLength = "short"
+
+# Request A100 or similar high-end GPU
+requirements = (TARGET.GPUs_Capability >= 8.0)
+
+# Resource requests
+request_gpus   = 1
+request_cpus   = 1
+request_memory = 12GB
+request_disk   = 20GB
+
+# Environment
+environment = "PYTHONUNBUFFERED=1"
+
+# Note: Number of jobs is specified by run.sh via "queue N"

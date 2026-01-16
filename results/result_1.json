@@ -1,0 +1,122 @@
+[
+  {
+    "patient_id": 14029474,
+    "global_idx": 0,
+    "condition": "NON-EIG",
+    "converged": false,
+    "correct": false,
+    "num_try": 10
+  },
+  {
+    "patient_id": 14029474,
+    "global_idx": 0,
+    "condition": "NON-EIG-NO-DIST",
+    "converged": "N/A",
+    "correct": false,
+    "num_try": 10
+  },
+  {
+    "patient_id": 14029474,
+    "global_idx": 0,
+    "condition": "EIG",
+    "converged": false,
+    "correct": false,
+    "num_try": 10
+  },
+  {
+    "patient_id": 17377989,
+    "global_idx": 1,
+    "condition": "NON-EIG",
+    "converged": false,
+    "correct": false,
+    "num_try": 10
+  },
+  {
+    "patient_id": 17377989,
+    "global_idx": 1,
+    "condition": "NON-EIG-NO-DIST",
+    "converged": "N/A",
+    "correct": false,
+    "num_try": 10
+  },
+  {
+    "patient_id": 17377989,
+    "global_idx": 1,
+    "condition": "EIG",
+    "converged": false,
+    "correct": false,
+    "num_try": 10
+  },
+  {
+    "patient_id": 18236282,
+    "global_idx": 2,
+    "condition": "NON-EIG",
+    "converged": false,
+    "correct": true,
+    "num_try": 10
+  },
+  {
+    "patient_id": 18236282,
+    "global_idx": 2,
+    "condition": "NON-EIG-NO-DIST",
+    "converged": "N/A",
+    "correct": true,
+    "num_try": 1
+  },
+  {
+    "patient_id": 18236282,
+    "global_idx": 2,
+    "condition": "EIG",
+    "converged": false,
+    "correct": false,
+    "num_try": 10
+  },
+  {
+    "patient_id": 12456241,
+    "global_idx": 3,
+    "condition": "NON-EIG",
+    "converged": false,
+    "correct": false,
+    "num_try": 10
+  },
+  {
+    "patient_id": 12456241,
+    "global_idx": 3,
+    "condition": "NON-EIG-NO-DIST",
+    "converged": "N/A",
+    "correct": true,
+    "num_try": 1
+  },
+  {
+    "patient_id": 12456241,
+    "global_idx": 3,
+    "condition": "EIG",
+    "converged": false,
+    "correct": false,
+    "num_try": 10
+  },
+  {
+    "patient_id": 19890784,
+    "global_idx": 4,
+    "condition": "NON-EIG",
+    "converged": false,
+    "correct": true,
+    "num_try": 10
+  },
+  {
+    "patient_id": 19890784,
+    "global_idx": 4,
+    "condition": "NON-EIG-NO-DIST",
+    "converged": "N/A",
+    "correct": true,
+    "num_try": 1
+  },
+  {
+    "patient_id": 19890784,
+    "global_idx": 4,
+    "condition": "EIG",
+    "converged": false,
+    "correct": false,
+    "num_try": 10
+  }
+]

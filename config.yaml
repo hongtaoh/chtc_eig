@@ -1,0 +1,53 @@
+# config.yaml
+# Configuration for CHTC Medical Diagnosis Experiment
+
+# Model configuration
+# model_repo: Qwen/Qwen2-0.5B-Instruct
+# model_name: Qwen-0.5B
+
+# model_repo: google/medgemma-4b-it  # HuggingFace model ID
+# model_name: medgemma-4b-it         # Local folder/tarball name
+
+model_repo: Qwen/Qwen2.5-3B-Instruct
+model_name: Qwen-3B
+
+# Experiment settings
+experiment:
+  max_try: 10          # Max questions per condition
+  threshold: 0.6       # Confidence threshold for convergence
+
+# --- CONTROL PANEL ---
+job_settings:
+  total_patients: 10   # Total rows in your CSV
+  batch_size: 5        # Patients per GPU job (e.g., 10/5 = 2 jobs)
+
+generation:
+  max_new_tokens: 1024
+  temperature: 0.7
+
+disease_list:
+  - Alcohol Abuse
+  - UTI
+  - Pneumonia
+  - Depression
+  - GI Bleed
+  - Cellulitis
+  - Heart Failure
+  - Acute Kidney Injury
+  - Epilepsy
+  - Asthma
+  - Ischemic Stroke
+  - Anemia
+  - Sepsis
+  - Atrial Fibrillation
+  - COPD
+  - Kidney Stone
+  - Anxiety
+  - Gastroenteritis
+  - Intestinal Obstruction
+  - Viral Infection
+  - Hypertension
+  - Myocardial Infarction
+  - Type 2 Diabetes
+  - Pancreatitis
+  - Hematuria
