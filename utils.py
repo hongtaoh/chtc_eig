@@ -1,25 +1,55 @@
 """
 Utility functions and classes for medical diagnosis experiments.
+Faithful to the original qwen-mlx.py
 """
 import json
 import math
+import re
 from typing import List, Dict
 import torch
 import pandas as pd
 
 
 # ==========================================
-# DISEASE LIST (loaded from config.yaml in main.py, passed to MedicalAgent)
+# DUPLICATE QUESTION DETECTION
 # ==========================================
-# Default list - will be overridden by config.yaml
-DISEASE_LIST = [
-    "Alcohol Abuse", "UTI", "Pneumonia", "Depression", "GI Bleed",
-    "Cellulitis", "Heart Failure", "Acute Kidney Injury", "Epilepsy",
-    "Asthma", "Ischemic Stroke", "Anemia", "Sepsis", "Atrial Fibrillation",
-    "COPD", "Kidney Stone", "Anxiety", "Gastroenteritis", 
-    "Intestinal Obstruction", "Viral Infection", "Hypertension",
-    "Myocardial Infarction", "Type 2 Diabetes", "Pancreatitis", "Hematuria"
-]
+def is_duplicate_question(new_question: str, history: List) -> bool:
+    """
+    Check if a question is a duplicate or very similar to previous questions.
+    Uses both exact match and fuzzy matching.
+    """
+    if not history:
+        return False
+    
+    new_q_lower = new_question.lower().strip()
+    # Remove punctuation for comparison
+    new_q_clean = re.sub(r'[^\w\s]', '', new_q_lower)
+    
+    for old_q, _ in history:
+        old_q_lower = old_q.lower().strip()
+        old_q_clean = re.sub(r'[^\w\s]', '', old_q_lower)
+        
+        # Exact match
+        if new_q_lower == old_q_lower:
+            return True
+        
+        # Clean match (ignoring punctuation)
+        if new_q_clean == old_q_clean:
+            return True
+        
+        # Substring match (one contains the other)
+        if new_q_clean in old_q_clean or old_q_clean in new_q_clean:
+            return True
+        
+        # High word overlap (>80% of words match)
+        new_words = set(new_q_clean.split())
+        old_words = set(old_q_clean.split())
+        if len(new_words) > 0 and len(old_words) > 0:
+            overlap = len(new_words & old_words) / max(len(new_words), len(old_words))
+            if overlap > 0.8:
+                return True
+    
+    return False
 
 
 # ==========================================
@@ -132,6 +162,7 @@ class MedicalAgent:
             add_generation_prompt=True
         )
         
+        # PyTorch tensors
         inputs = self.tokenizer([text], return_tensors="pt").to(self.device)
         
         with torch.no_grad():
@@ -249,17 +280,19 @@ Ensure all probabilities sum roughly to 1.
     def get_likelihood_matrix(self, question: str, diseases: List[str]) -> Dict[str, float]:
         """
         Estimate P(Answer=YES | Disease) for each disease.
-        Uses simple yes/no generation and confidence estimation.
+        Uses direct forward pass to get token probabilities (not generation).
         """
         result = {}
         
+        # Debug: show what tokens we're looking for
+        yes_tokens = self.tokenizer.encode("YES", add_special_tokens=False)
+        no_tokens = self.tokenizer.encode("NO", add_special_tokens=False)
+        # print(f"  [Debug] YES token IDs: {yes_tokens}, NO token IDs: {no_tokens}")
+        
         for disease in diseases:
             prompt = f"""Assume a patient has {disease}.
-
 Question: "{question}"
-
-Would this patient likely answer YES to this question?
-
+Would this patient likely answer YES?
 Answer ONLY: YES or NO"""
             
             messages = [
@@ -273,34 +306,18 @@ Answer ONLY: YES or NO"""
                 add_generation_prompt=True
             )
             
-            inputs = self.tokenizer([text], return_tensors="pt").to(self.device)
+            inputs = self.tokenizer(text, return_tensors="pt").to(self.device)
             
+            # Direct forward pass (NOT generation) 
             with torch.no_grad():
-                outputs = self.model.generate(
-                    **inputs,
-                    max_new_tokens=5,
-                    temperature=None,
-                    do_sample=False,
-                    pad_token_id=self.tokenizer.eos_token_id,
-                    output_scores=True,
-                    return_dict_in_generate=True
-                )
+                outputs = self.model(inputs["input_ids"])
+                # Get logits for the next token (last position)
+                next_token_logits = outputs.logits[:, -1, :]
+                probs = torch.softmax(next_token_logits, dim=-1)
             
-            # Get the generated text
-            generated_ids = outputs.sequences[0][inputs['input_ids'].shape[1]:]
-            answer = self.tokenizer.decode(generated_ids, skip_special_tokens=True).strip().upper()
-            
-            # Try to get probability from logits
-            if outputs.scores:
-                first_token_logits = outputs.scores[0][0]
-                probs = torch.softmax(first_token_logits, dim=-1)
-                
-                # Get token IDs for YES and NO
-                yes_tokens = self.tokenizer.encode("YES", add_special_tokens=False)
-                no_tokens = self.tokenizer.encode("NO", add_special_tokens=False)
-                
-                p_yes = probs[yes_tokens[0]].item() if yes_tokens else 0.5
-                p_no = probs[no_tokens[0]].item() if no_tokens else 0.5
+            if yes_tokens and no_tokens:
+                p_yes = probs[0, yes_tokens[0]].item()
+                p_no = probs[0, no_tokens[0]].item()
                 
                 # Normalize between YES and NO
                 total = p_yes + p_no
@@ -309,8 +326,9 @@ Answer ONLY: YES or NO"""
                 else:
                     p_yes = 0.5
             else:
-                # Fallback: use binary answer
-                p_yes = 0.9 if "YES" in answer else 0.1
+                # Fallback if tokenization fails
+                print(f"  [Warning] Token encoding failed for YES/NO")
+                p_yes = 0.5
             
             result[disease] = max(0.01, min(0.99, p_yes))
         
@@ -321,17 +339,19 @@ Answer ONLY: YES or NO"""
         history_text = "\n".join([f"Q: {q} A: {a}" for q, a in history]) if history else "None"
         
         sorted_probs = sorted(current_probs.items(), key=lambda x: x[1], reverse=True)
-        dist_str = json.dumps(dict(sorted_probs), indent=2)
+        dist_str = json.dumps(dict(sorted_probs[:10]), indent=2)  # Only show top 10
         
         prompt = f"""
 Patient Information: {note}
-All previous questions and answers: {history_text}
 
-Current Disease Probabilities:
+Previous questions and answers (DO NOT repeat these): 
+{history_text}
+
+Current Disease Probabilities (top 10):
 {dist_str}
 
 Task: Propose 3 DISTINCT BINARY (Yes/No) questions to narrow down the diagnosis. 
-Do not ask questions that have been answered above.
+IMPORTANT: Do NOT ask any question that is similar to the previous questions above.
 Strategy: Ask questions that differentiate the top likely diseases.
 
 Return strictly a JSON object: {{ "questions": ["Question 1", "Question 2", "Question 3"] }}
@@ -339,49 +359,96 @@ Return strictly a JSON object: {{ "questions": ["Question 1", "Question 2", "Que
         data = self._call_llm_json(prompt, temperature=0.7, max_retries=3)
         questions = data.get("questions", [])
         
-        # Fallback: if no questions, try to generate one simple question
-        if not questions:
-            print("Warning: Failed to get questions from JSON, using fallback")
-            top_diseases = [d for d, _ in sorted_probs[:3]]
-            questions = [f"Does the patient have symptoms consistent with {top_diseases[0]}?"]
+        # Filter out duplicates
+        filtered_questions = []
+        for q in questions:
+            if not is_duplicate_question(q, history):
+                filtered_questions.append(q)
         
-        return questions
+        # Fallback: if no questions, try to generate one simple question
+        if not filtered_questions:
+            print("Warning: Failed to get non-duplicate questions, using fallback")
+            top_diseases = [d for d, _ in sorted_probs[:3]]
+            filtered_questions = [f"Does the patient have symptoms consistent with {top_diseases[0]}?"]
+        
+        return filtered_questions
     
-    def propose_one_binary_question_for_control(self, note: str, history: List, current_probs: Dict) -> str:
-        """Proposes one question for NON-EIG condition with prob tracking."""
+    def propose_one_binary_question_for_control(self, note: str, history: List, current_probs: Dict, max_retries: int = 5) -> str:
+        """
+        Proposes one question for NON-EIG condition with prob tracking.
+        Includes retry logic to avoid duplicate questions.
+        """
         history_text = "\n".join([f"Q: {q} A: {a}" for q, a in history]) if history else "None"
         
         sorted_probs = sorted(current_probs.items(), key=lambda x: x[1], reverse=True)
-        dist_str = json.dumps(dict(sorted_probs), indent=2)
+        dist_str = json.dumps(dict(sorted_probs[:10]), indent=2)
         
-        prompt = f"""
+        for attempt in range(max_retries):
+            prompt = f"""
 Patient Information: {note}
-All previous questions and answers: {history_text}
 
-Current Disease Probabilities:
+Previous questions and answers (DO NOT repeat these): 
+{history_text}
+
+Current Disease Probabilities (top 10):
 {dist_str}
 
-Task: Propose 1 DISTINCT BINARY (Yes/No) question to narrow down the diagnosis. 
-Do not ask questions that have been answered above.
+Task: Propose 1 NEW BINARY (Yes/No) question to narrow down the diagnosis. 
+CRITICAL: You must ask a DIFFERENT question from all the previous questions listed above.
 Strategy: Ask a question that differentiates the top likely diseases.
-OUTPUT REQUIREMENT: Output ONLY the question text. Do not add any introductory text or explanations.
+OUTPUT REQUIREMENT: Output ONLY the question text. No explanations, no preamble.
 """
-        return self._call_llm_text(prompt)
+            question = self._call_llm_text(prompt, temperature=0.7 + attempt * 0.1)  # Increase temp on retries
+            
+            # Clean up the question
+            question = question.strip()
+            # Remove any leading text like "Question:" or "Here is a question:"
+            if ":" in question and len(question.split(":")[0]) < 30:
+                question = ":".join(question.split(":")[1:]).strip()
+            
+            if not is_duplicate_question(question, history):
+                return question
+            else:
+                print(f"  [Retry {attempt+1}] Duplicate question detected, regenerating...")
+        
+        # If all retries fail, return a fallback generic question
+        print("  [Warning] Could not generate unique question after retries")
+        return question  # Return last attempt anyway
     
-    def propose_one_binary_question_for_control_without_dist(self, note: str, history: List) -> str:
-        """Proposes one question for NON-EIG condition without prob tracking."""
+    def propose_one_binary_question_for_control_without_dist(self, note: str, history: List, max_retries: int = 5) -> str:
+        """
+        Proposes one question for NON-EIG condition without prob tracking.
+        Includes retry logic to avoid duplicate questions.
+        """
         history_text = "\n".join([f"Q: {q} A: {a}" for q, a in history]) if history else "None"
         
-        prompt = f"""
+        for attempt in range(max_retries):
+            prompt = f"""
 Patient Information: {note}
-All previous questions and answers: {history_text}
+
+Previous questions and answers (DO NOT repeat these): 
+{history_text}
+
 Disease candidates: {self.disease_list}
 
-Task: Propose 1 DISTINCT BINARY (Yes/No) question to narrow down the diagnosis. 
-Do not ask questions that have been answered above.
-OUTPUT REQUIREMENT: Output ONLY the question text. Do not add any introductory text or explanations.
+Task: Propose 1 NEW BINARY (Yes/No) question to narrow down the diagnosis. 
+CRITICAL: You must ask a DIFFERENT question from all the previous questions listed above.
+OUTPUT REQUIREMENT: Output ONLY the question text. No explanations, no preamble.
 """
-        return self._call_llm_text(prompt)
+            question = self._call_llm_text(prompt, temperature=0.7 + attempt * 0.1)
+            
+            # Clean up the question
+            question = question.strip()
+            if ":" in question and len(question.split(":")[0]) < 30:
+                question = ":".join(question.split(":")[1:]).strip()
+            
+            if not is_duplicate_question(question, history):
+                return question
+            else:
+                print(f"  [Retry {attempt+1}] Duplicate question detected, regenerating...")
+        
+        print("  [Warning] Could not generate unique question after retries")
+        return question
 
     def answer_simulation(self, question: str, true_diagnosis: str, note: str) -> str:
         """A-LLM answers the question based on true diagnosis and patient info."""
@@ -390,9 +457,10 @@ Patient TRUE Diagnosis: {true_diagnosis}
 Patient Information: {note}
 Question: "{question}"
 
-Task: Based on the patient's true diagnosis and information, answer strictly "YES" or "NO".
+Task: Based on the patient's true diagnosis and clinical information, answer strictly "YES" or "NO".
+Answer with ONLY one word: YES or NO
 """
-        text = self._call_llm_text(prompt)
+        text = self._call_llm_text(prompt, temperature=0.0)
         return "YES" if "YES" in text.strip().upper() else "NO"
     
     def guess_answer_control_no_dist(self, note: str, history: List) -> str:
@@ -404,10 +472,10 @@ Patient Information: {note}
 All previous questions and answers: {history_text}
 Disease candidates: {self.disease_list}
 
-Task: Estimate the most likely disease (ONLY ONE) based on the above information.
-OUTPUT REQUIREMENT: Output ONLY the disease name. Do not add any introductory text or explanations.
+Task: Based on all the information above, what is the MOST LIKELY diagnosis?
+OUTPUT REQUIREMENT: Output ONLY the disease name from the list. Nothing else.
 """
-        response = self._call_llm_text(prompt)
+        response = self._call_llm_text(prompt, temperature=0.0)
         # Try to match to a disease in our list
         response_lower = response.lower().strip()
         for d in self.disease_list:
@@ -428,7 +496,7 @@ Task: Update the probability (0-1) for EACH disease in the list below.
 Disease List: {self.disease_list}
 
 Output strictly JSON format: {{ "Disease1": 0.1, ... }}
-Ensure all probabilities sum to 1.
+Ensure all probabilities sum roughly to 1.
 """
         data = self._call_llm_json(prompt, temperature=0.0, max_retries=3)
         
@@ -501,8 +569,9 @@ def run_experiment(
             
             print("  Scanning questions for EIG...")
             for q in questions:
-                # Skip duplicates
-                if any(q in old_q for old_q, _ in history): 
+                # Skip duplicates (using proper duplicate check)
+                if is_duplicate_question(q, history): 
+                    print(f"  [Skip] Duplicate: '{q[:50]}...'")
                     continue
                 
                 # Get Matrix L
@@ -510,7 +579,7 @@ def run_experiment(
                 
                 # Calculate EIG
                 eig = calculate_eig(current_probs, l_matrix)
-                print(f"  Q: '{q}' -> EIG: {eig:.4f}") 
+                print(f"  Q: '{q[:60]}...' -> EIG: {eig:.4f}") 
                 
                 if eig > best_eig:
                     best_eig = eig

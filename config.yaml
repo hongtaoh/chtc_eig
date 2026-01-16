@@ -5,11 +5,11 @@
 # model_repo: Qwen/Qwen2-0.5B-Instruct
 # model_name: Qwen-0.5B
 
-# model_repo: google/medgemma-4b-it  # HuggingFace model ID
-# model_name: medgemma-4b-it         # Local folder/tarball name
+model_repo: google/medgemma-4b-it  # HuggingFace model ID
+model_name: medgemma-4b-it         # Local folder/tarball name
 
-model_repo: Qwen/Qwen2.5-3B-Instruct
-model_name: Qwen-3B
+# model_repo: Qwen/Qwen2.5-3B-Instruct
+# model_name: Qwen-3B
 
 # Experiment settings
 experiment:
@@ -18,7 +18,7 @@ experiment:
 
 # --- CONTROL PANEL ---
 job_settings:
-  total_patients: 10   # Total rows in your CSV
+  total_patients: 25   # Total rows in your CSV
   batch_size: 5        # Patients per GPU job (e.g., 10/5 = 2 jobs)
 
 generation:
